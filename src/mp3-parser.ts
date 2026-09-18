@@ -1,6 +1,3 @@
-const MPEG_VERSION_1 = 0b11;
-const LAYER_3 = 0b01;
-
 const BITRATE_TABLE: Record<number, number> = {
   0b0001: 32000,
   0b0010: 40000,
@@ -24,74 +21,47 @@ const SAMPLE_RATE_TABLE: Record<number, number> = {
   0b10: 32000,
 };
 
-interface FrameHeader {
-  bitrate: number;
-  sampleRate: number;
-  padding: boolean;
-  frameSize: number;
-}
-
-function skipId3v2Tag(buffer: Buffer, offset: number): number {
-  if (
-    offset + 10 <= buffer.length &&
-    buffer[offset] === 0x49 && // 'I'
-    buffer[offset + 1] === 0x44 && // 'D'
-    buffer[offset + 2] === 0x33 // '3'
-  ) {
-    const size =
-      ((buffer[offset + 6] & 0x7f) << 21) |
-      ((buffer[offset + 7] & 0x7f) << 14) |
-      ((buffer[offset + 8] & 0x7f) << 7) |
-      (buffer[offset + 9] & 0x7f);
-    return offset + 10 + size;
-  }
-  return offset;
-}
-
-function parseFrameHeader(
-  buffer: Buffer,
-  offset: number,
-): FrameHeader | null {
+function parseFrameSize(buffer: Buffer, offset: number): number | null {
   if (offset + 4 > buffer.length) return null;
 
   const header = buffer.readUInt32BE(offset);
 
-  const syncWord = (header >> 21) & 0x7ff;
-  if (syncWord !== 0x7ff) return null;
+  if (((header >> 21) & 0x7ff) !== 0x7ff) return null; // sync word
+  if (((header >> 19) & 0x03) !== 0b11) return null; // MPEG version 1
+  if (((header >> 17) & 0x03) !== 0b01) return null; // Layer 3
 
-  const version = (header >> 19) & 0x03;
-  if (version !== MPEG_VERSION_1) return null;
+  const bitrate = BITRATE_TABLE[(header >> 12) & 0x0f];
+  const sampleRate = SAMPLE_RATE_TABLE[(header >> 10) & 0x03];
+  if (!bitrate || !sampleRate) return null;
 
-  const layer = (header >> 17) & 0x03;
-  if (layer !== LAYER_3) return null;
-
-  const bitrateIndex = (header >> 12) & 0x0f;
-  const bitrate = BITRATE_TABLE[bitrateIndex];
-  if (!bitrate) return null;
-
-  const sampleRateIndex = (header >> 10) & 0x03;
-  const sampleRate = SAMPLE_RATE_TABLE[sampleRateIndex];
-  if (!sampleRate) return null;
-
-  const padding = ((header >> 9) & 0x01) === 1;
-
-  // MPEG1 Layer 3: frameSize = 144 * bitrate / sampleRate + padding
-  const frameSize =
-    Math.floor((144 * bitrate) / sampleRate) + (padding ? 1 : 0);
-
-  return { bitrate, sampleRate, padding, frameSize };
+  const padding = (header >> 9) & 0x01;
+  return Math.floor((144 * bitrate) / sampleRate) + padding;
 }
 
 export function countFrames(buffer: Buffer): number {
-  let offset = skipId3v2Tag(buffer, 0);
+  let offset = 0;
+
+  // Skip ID3v2 tag if present
+  if (
+    buffer.length >= 10 &&
+    buffer[0] === 0x49 &&
+    buffer[1] === 0x44 &&
+    buffer[2] === 0x33
+  ) {
+    offset =
+      10 +
+      (((buffer[6] & 0x7f) << 21) |
+        ((buffer[7] & 0x7f) << 14) |
+        ((buffer[8] & 0x7f) << 7) |
+        (buffer[9] & 0x7f));
+  }
+
   let frameCount = 0;
-
   while (offset < buffer.length) {
-    const header = parseFrameHeader(buffer, offset);
-
-    if (header) {
+    const frameSize = parseFrameSize(buffer, offset);
+    if (frameSize) {
       frameCount++;
-      offset += header.frameSize;
+      offset += frameSize;
     } else {
       offset++;
     }

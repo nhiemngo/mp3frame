@@ -22,24 +22,16 @@ app.post("/file-upload", upload.single("file"), (req, res) => {
     return;
   }
 
-  const frameCount = countFrames(req.file.buffer);
-
-  res.json({ frameCount });
+  res.json({ frameCount: countFrames(req.file.buffer) });
 });
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json({ error: "File too large (max 100MB)" });
-        return;
-      }
-      res.status(400).json({ error: err.message });
-      return;
-    }
-
-    res.status(400).json({ error: err.message });
-  },
-);
+  if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+    res.status(413).json({ error: "File too large (max 100MB)" });
+    return;
+  }
+  res.status(400).json({ error: err.message });
+});
 
 export default app;
