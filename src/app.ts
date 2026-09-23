@@ -34,4 +34,11 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(400).json({ error: err.message });
 });
 
+if (require.main === module) {
+  const PORT = process.env.PORT ?? 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
 export default app;
